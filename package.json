@@ -1,0 +1,9 @@
+{
+  "name": "realtime-location-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "postinstall": "cd client && npm install && npm run build && cd .. && cd server && npm install && cd ..",
+    "start": "node server/index.js"
+  }
+}

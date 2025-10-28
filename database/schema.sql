@@ -1,0 +1,26 @@
+-- schema for realtime location tracker
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  pin VARCHAR(10),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE shares (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  token VARCHAR(255) UNIQUE,
+  active INTEGER DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME
+);
+
+CREATE TABLE locations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  share_token VARCHAR(255),
+  lat REAL,
+  lng REAL,
+  heading REAL,
+  speed REAL,
+  recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

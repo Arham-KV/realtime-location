@@ -1,0 +1,1 @@
+This is the Vite + React client. Run `npm install` and `npm run build` during postinstall.
