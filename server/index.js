@@ -6,14 +6,22 @@ const { Sequelize, DataTypes } = require('sequelize');
 const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const fs = require('fs');
 
 // 🔧 Environment setup
 const PORT = process.env.PORT || 3000;
 const DB_TYPE = process.env.DB_TYPE || 'sqlite';
 
+// ✅ Railway-compatible paths
+const clientDistPath = path.join(__dirname, '..', 'client', 'dist');
+const clientIndexPath = path.join(clientDistPath, 'index.html');
+
+console.log('📁 Client path:', clientDistPath);
+console.log('📁 Current directory:', __dirname);
+
 let sequelize;
 
-// ✅ Database setup (simplified)
+// Database setup
 if (DB_TYPE === 'mysql' && process.env.MYSQL_HOST) {
   sequelize = new Sequelize(
     process.env.MYSQL_DATABASE || 'tracker',
@@ -27,7 +35,12 @@ if (DB_TYPE === 'mysql' && process.env.MYSQL_HOST) {
   );
   console.log('✅ Using MySQL DB');
 } else {
-  // ✅ SQLite for local
+  // Create data directory if it doesn't exist
+  const dataDir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  
   sequelize = new Sequelize({
     dialect: 'sqlite',
     storage: path.join(__dirname, 'data', 'tracker.sqlite'),
@@ -48,15 +61,16 @@ const io = require('socket.io')(server, {
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
-app.use(express.static(path.join(__dirname, 'client', 'dist')));
 
-// Ensure data directory exists
-const fs = require('fs');
-if (!fs.existsSync(path.join(__dirname, 'data'))) {
-  fs.mkdirSync(path.join(__dirname, 'data'));
+// ✅ Serve static files if they exist
+if (fs.existsSync(clientIndexPath)) {
+  console.log('✅ Serving built client files');
+  app.use(express.static(clientDistPath));
+} else {
+  console.log('⚠️ Client not built - will serve basic interface');
 }
 
-// 🧠 Models (Fixed)
+// 🧠 Models
 const User = sequelize.define('User', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   email: { type: DataTypes.STRING, unique: true, allowNull: false },
@@ -74,7 +88,7 @@ const Share = sequelize.define('Share', {
   active: { type: DataTypes.BOOLEAN, defaultValue: true },
   expires_at: { 
     type: DataTypes.DATE, 
-    defaultValue: () => new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+    defaultValue: () => new Date(Date.now() + 24 * 60 * 60 * 1000)
   }
 }, { 
   timestamps: true, 
@@ -105,7 +119,6 @@ async function initDb() {
     await sequelize.sync({ force: false });
     console.log('✅ Database synced');
     
-    // Create demo user
     const [user, created] = await User.findOrCreate({
       where: { email: 'demo@example.com' },
       defaults: { pin: '1234' },
@@ -120,9 +133,6 @@ async function initDb() {
     console.error('❌ Database error:', error);
   }
 }
-
-// Temporary PIN store
-const pinStore = {};
 
 // 🧾 API Routes
 app.post('/api/auth/request-pin', async (req, res) => {
@@ -178,7 +188,6 @@ app.post('/api/auth/verify-pin', async (req, res) => {
   }
 });
 
-// Start sharing
 app.post('/api/share', async (req, res) => {
   try {
     const { email } = req.body;
@@ -204,7 +213,6 @@ app.post('/api/share', async (req, res) => {
   }
 });
 
-// Stop sharing
 app.post('/api/stop', async (req, res) => {
   try {
     const { token } = req.body;
@@ -214,7 +222,6 @@ app.post('/api/stop', async (req, res) => {
     share.active = false;
     await share.save();
 
-    // Notify all viewers
     io.to(`share:${token}`).emit('sharing_stopped');
     res.json({ success: true, message: 'Sharing stopped' });
   } catch (error) {
@@ -229,7 +236,6 @@ app.get('/api/session/:token', async (req, res) => {
     const share = await Share.findOne({ where: { token } });
     if (!share) return res.status(404).json({ error: 'Share not found' });
 
-    // Get last location
     const lastLocation = await Location.findOne({
       where: { share_token: token },
       order: [['recorded_at', 'DESC']]
@@ -246,38 +252,29 @@ app.get('/api/session/:token', async (req, res) => {
   }
 });
 
-// Serve React app
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'client', 'dist', 'index.html'));
-});
-
-// 🛰️ Socket.IO Real-time (FIXED)
-const rateLimitMs = 1000; // 1 second rate limit
+// 🛰️ Socket.IO Real-time
+const rateLimitMs = 1000;
 const lastEmit = {};
 
 io.on('connection', (socket) => {
   console.log('⚡ User connected:', socket.id);
 
-  // Join share room
   socket.on('join_share', (data) => {
     const { token } = data;
     socket.join(`share:${token}`);
     console.log(`👥 User ${socket.id} joined share:${token}`);
   });
 
-  // Handle location updates
   socket.on('location_update', async (data) => {
     try {
       const now = Date.now();
       const last = lastEmit[socket.id] || 0;
       
-      // Rate limiting
       if (now - last < rateLimitMs) return;
       lastEmit[socket.id] = now;
 
       const { token, lat, lng, heading, speed, accuracy } = data;
       
-      // Save to database
       await Location.create({
         share_token: token,
         lat,
@@ -287,7 +284,6 @@ io.on('connection', (socket) => {
         accuracy: accuracy || 10
       });
 
-      // Broadcast to all viewers in the room
       io.to(`share:${token}`).emit('location_update', {
         lat,
         lng,
@@ -303,12 +299,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Stop sharing
   socket.on('stop_sharing', async (data) => {
     const { token } = data;
     io.to(`share:${token}`).emit('sharing_stopped');
     
-    // Update database
     await Share.update(
       { active: false },
       { where: { token } }
@@ -321,6 +315,158 @@ io.on('connection', (socket) => {
     console.log('🔌 User disconnected:', socket.id);
     delete lastEmit[socket.id];
   });
+});
+
+// ✅ Serve appropriate frontend
+app.get('*', (req, res) => {
+  if (fs.existsSync(clientIndexPath)) {
+    // Serve built React app
+    res.sendFile(clientIndexPath);
+  } else {
+    // Serve basic HTML interface
+    const html = `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>LiveTrack - Real-time Location Sharing</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem;
+        }
+        .container {
+          background: white;
+          padding: 3rem;
+          border-radius: 1rem;
+          box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+          text-align: center;
+          max-width: 500px;
+          width: 100%;
+        }
+        .logo {
+          width: 80px;
+          height: 80px;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto 1.5rem;
+        }
+        .logo svg {
+          width: 40px;
+          height: 40px;
+          color: white;
+        }
+        h1 {
+          color: #1a202c;
+          margin-bottom: 1rem;
+          font-size: 2rem;
+        }
+        p {
+          color: #4a5568;
+          margin-bottom: 1.5rem;
+          line-height: 1.6;
+        }
+        .btn {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 12px 24px;
+          border: none;
+          border-radius: 8px;
+          font-size: 1rem;
+          cursor: pointer;
+          text-decoration: none;
+          display: inline-block;
+          margin: 0.5rem;
+        }
+        .status {
+          background: #edf2f7;
+          padding: 1rem;
+          border-radius: 8px;
+          margin: 1rem 0;
+          font-family: monospace;
+          text-align: left;
+          font-size: 0.9rem;
+        }
+        .demo-info {
+          background: #e6fffa;
+          border: 1px solid #81e6d9;
+          padding: 1rem;
+          border-radius: 8px;
+          margin: 1rem 0;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="logo">
+          <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/>
+          </svg>
+        </div>
+        <h1>LiveTrack</h1>
+        <p>Real-time Location Sharing Application</p>
+        
+        <div class="demo-info">
+          <strong>🚀 Server Running Successfully!</strong><br>
+          <strong>Email:</strong> demo@example.com<br>
+          <strong>PIN:</strong> 1234
+        </div>
+        
+        <div class="status">
+          <strong>Status:</strong> Backend API Active<br>
+          <strong>Port:</strong> ${PORT}<br>
+          <strong>Database:</strong> ${DB_TYPE}<br>
+          <strong>Client:</strong> Building...
+        </div>
+        
+        <div>
+          <button class="btn" onclick="testAPI()">Test API Connection</button>
+          <button class="btn" onclick="location.reload()">Refresh Page</button>
+        </div>
+        
+        <p style="margin-top: 2rem; font-size: 0.9rem; color: #718096;">
+          Backend server is running. React client is building...<br>
+          Refresh in a few moments.
+        </p>
+      </div>
+
+      <script>
+        async function testAPI() {
+          try {
+            const response = await fetch('/api/auth/request-pin', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: 'test@example.com' })
+            });
+            const data = await response.json();
+            alert('API Connected! PIN: ' + data.pin);
+          } catch (error) {
+            alert('API Error: ' + error.message);
+          }
+        }
+        
+        // Auto-refresh every 10 seconds
+        setTimeout(() => {
+          location.reload();
+        }, 10000);
+      </script>
+    </body>
+    </html>
+    `;
+    
+    res.send(html);
+  }
 });
 
 // 🟢 Start Server
