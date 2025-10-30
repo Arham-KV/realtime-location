@@ -413,12 +413,12 @@ export default function SharePage() {
                 </h1>
                 <div className="flex items-center space-x-4 mt-1">
                   <div className={`flex items-center text-sm font-medium ${connectionStatus === 'connected' ? 'text-green-600' :
-                      connectionStatus === 'error' ? 'text-red-600' :
-                        connectionStatus === 'stopped' ? 'text-gray-600' : 'text-yellow-600'
+                    connectionStatus === 'error' ? 'text-red-600' :
+                      connectionStatus === 'stopped' ? 'text-gray-600' : 'text-yellow-600'
                     }`}>
                     <div className={`w-2 h-2 rounded-full mr-2 ${connectionStatus === 'connected' ? 'bg-green-500 animate-pulse' :
-                        connectionStatus === 'error' ? 'bg-red-500' :
-                          connectionStatus === 'stopped' ? 'bg-gray-500' : 'bg-yellow-500'
+                      connectionStatus === 'error' ? 'bg-red-500' :
+                        connectionStatus === 'stopped' ? 'bg-gray-500' : 'bg-yellow-500'
                       }`}></div>
                     {status}
                   </div>
@@ -436,6 +436,13 @@ export default function SharePage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
                 <span>Copy Link</span>
+              </button>
+               {/* SharePage.jsx mein copy link button ke baad */}
+              <button
+                onClick={() => navigate(`/analytics/${token}`)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                View Analytics
               </button>
               <button
                 onClick={stopSharing}

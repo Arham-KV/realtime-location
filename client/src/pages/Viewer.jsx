@@ -288,6 +288,7 @@ export default function Viewer() {
 
     // Listen for location updates
     socketRef.current.on('location_update', (data) => {
+      console.log('📍 Received location data:', data);
       const newLocation = {
         lat: data.lat,
         lng: data.lng,
